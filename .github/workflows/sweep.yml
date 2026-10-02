@@ -1,0 +1,22 @@
+name: sweep expired tote boxes
+on:
+  schedule: [{cron: "17 * * * *"}]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          now=$(date -u +%s)
+          gh api "repos/$REPO/releases" --paginate \
+            --jq '.[] | select(.tag_name | startswith("box-")) | [.tag_name, ((.body // "") | capture("Expires: (?<e>[0-9TZ:+-]+)").e // .created_at)] | @tsv' |
+          while IFS=$'\t' read -r tag exp; do
+            if [ "$(date -u -d "$exp" +%s)" -lt "$now" ]; then
+              gh release delete "$tag" --repo "$REPO" --cleanup-tag --yes
+            fi
+          done
